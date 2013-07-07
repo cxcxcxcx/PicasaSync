@@ -1,8 +1,8 @@
 #! /usr/bin/env python
 
 import sys
-if sys.hexversion < 0x020700F0:
-    raise SystemExit('This scripts needs at least Python 2.7')
+#if sys.hexversion < 0x020700F0:
+#    raise SystemExit('This scripts needs at least Python 2.7')
 
 import logging, os, mimetypes, argparse, urllib, multiprocessing, threading, calendar, re, cStringIO, itertools
 
@@ -145,7 +145,7 @@ class Photo(object):
         elif self.isInPicasa() and not other.isInPicasa() and other.isInDisk():
             self.disk = other.disk
         else:
-            raise InvalidArguments(u'Tried to combine the photo "{}" with another of the same type'.format(self.title))
+            raise InvalidArguments(u'Tried to combine the photo "{0}" with another of the same type'.format(self.title))
 
     def isInDisk(self):
         return bool(self.disk) and bool(self.disk.timestamp)
@@ -164,7 +164,7 @@ class Photo(object):
                 try:
                     self.picasa = self.album.client.UpdatePhotoMetadata(self.picasa)
                 except GooglePhotosException as e:
-                    self.LOG.error(u'Error updating metadata for photo "{}": '.format(self.title) + str(e))
+                    self.LOG.error(u'Error updating metadata for photo "{0}": '.format(self.title) + str(e))
                 finally:
                     return
             else:
@@ -183,7 +183,7 @@ class Photo(object):
             try:
                 original.read()
             except Exception as e:
-                self.LOG.error(u'Error reading file "{}": '.format(self.disk.path) + str(e))
+                self.LOG.error(u'Error reading file "{0}": '.format(self.disk.path) + str(e))
                 return
 
             if 'raw' in transforms and not self.isRaw():
@@ -195,7 +195,7 @@ class Photo(object):
 
             if 'raw' in transforms:
                 if len(original.previews) == 0:
-                    self.LOG.error(u'Error getting valid preview from raw file "{}"'.format(self.disk.path))
+                    self.LOG.error(u'Error getting valid preview from raw file "{0}"'.format(self.disk.path))
                     return
                 try:
                     preview = next(x for x in original.previews if (x.dimensions[0] >= self.album.cl_args.max_size[0] or x.dimensions[1] >= self.album.cl_args.max_size[1]) and x.mime_type in AlbumList.standard_types)
@@ -203,7 +203,7 @@ class Photo(object):
                     preview = metadata.previews[-1]
                 mimetype = preview.mime_type
                 if mimetype not in AlbumList.standard_types:
-                    self.LOG.error(u'Error getting valid preview from raw file "{}"'.format(self.disk.path))
+                    self.LOG.error(u'Error getting valid preview from raw file "{0}"'.format(self.disk.path))
                     return
                 photo = cStringIO.StringIO(preview.data)
             else:
@@ -249,7 +249,7 @@ class Photo(object):
             else:
                 self.picasa = self.album.client.InsertPhoto(self.album.picasa, metadata, photo, mimetype)
         except GooglePhotosException as e:
-            self.LOG.error(u'Error uploading file "{}": '.format(self.disk.path) + str(e))
+            self.LOG.error(u'Error uploading file "{0}": '.format(self.disk.path) + str(e))
 
     @dryrun('self.album.cl_args.dry_run', LOG, u'Downloading photo "{self.title}"{reason}')
     def download(self):
@@ -257,7 +257,7 @@ class Photo(object):
         if not self.disk:
             self.disk = PhotoDiskEntry(self.album.cl_args, self.title + mimetypes.guess_extension(self.picasa.content.type), self.album.disk.path)
         if mimetypes.guess_type(self.path)[0] in AlbumList.raw_types:
-            self.LOG.warn(u'Not overwriting RAW file "{}"'.format(self.path))
+            self.LOG.warn(u'Not overwriting RAW file "{0}"'.format(self.path))
             return
         tmpfilename = self.path + '.part'
         try:
@@ -265,7 +265,7 @@ class Photo(object):
             os.utime(tmpfilename, (timestamp, timestamp))
             os.rename(tmpfilename, self.path)
         except EnvironmentError as e:
-            self.LOG.error(u'Error downloading photo "{}": '.format(self.title) + str(e))
+            self.LOG.error(u'Error downloading photo "{0}": '.format(self.title) + str(e))
         else:
             self.disk.timestamp = timestamp
 
@@ -276,6 +276,9 @@ class Photo(object):
         except AttributeError as e:
             self.LOG.error(str(e))
             return
+        if not self.disk:
+            self.LOG.error("Disk object is None..")
+            return
         thumbnail_path = 'thumbnail/' + self.path
         tmpfilename = thumbnail_path + '.part'
         try:
@@ -283,7 +286,7 @@ class Photo(object):
             os.utime(tmpfilename, (timestamp, timestamp))
             os.rename(tmpfilename, thumbnail_path)
         except EnvironmentError as e:
-            self.LOG.error(u'Error downloading photo thumbnail "{}": '.format(self.title) + str(e))
+            self.LOG.error(u'Error downloading photo thumbnail "{0}": '.format(self.title) + str(e))
         else:
             self.disk.timestamp = timestamp
 
@@ -301,7 +304,7 @@ class Photo(object):
         try:
             self.album.client.Delete(self.picasa)
         except GooglePhotosException as e:
-            self.LOG.error(u'Error deleting photo "{}": '.format(self.title) + str(e))
+            self.LOG.error(u'Error deleting photo "{0}": '.format(self.title) + str(e))
         finally:
             self.picasa = None
 
@@ -351,7 +354,7 @@ class Album(dict):
         elif self.isInPicasa() and not other.isInPicasa() and other.isInDisk():
             self.disk = other.disk
         else:
-            raise InvalidArguments(u'Tried to combine the album "{}" with another of the same type'.format(self.title))
+            raise InvalidArguments(u'Tried to combine the album "{0}" with another of the same type'.format(self.title))
 
     def fillFromDisk(self, files):
         if self.filled_from_disk:
@@ -398,7 +401,7 @@ class Album(dict):
         try:
             self.picasa = self.client.InsertAlbum(title = self.title, summary = None, access = access, timestamp = str(long(self.disk.timestamp) * 1000))
         except GooglePhotosException as e:
-            self.LOG.error(u'Error creating album "{}": '.format(self.title) + str(e))
+            self.LOG.error(u'Error creating album "{0}": '.format(self.title) + str(e))
         else:
             for photo_title in sorted(self.iterkeys()):
                 photo = self[photo_title]
@@ -434,8 +437,8 @@ class Album(dict):
         self.fillFromPicasa()
         for photo_title in sorted(self.iterkeys()):
             photo = self[photo_title]
-            #photo.sync()
-            photo.download()
+            photo.sync()
+            #photo.download()
 
     @dryrun('self.cl_args.dry_run', LOG, u'Deleting directory "{self.disk.path}"{reason}')
     def deleteFromDisk(self):
@@ -455,7 +458,7 @@ class Album(dict):
         try:
             self.client.Delete(self.picasa)
         except GooglePhotosException as e:
-            self.LOG.error(u'Error deleting album "{}": '.format(self.title) + str(e))
+            self.LOG.error(u'Error deleting album "{0}": '.format(self.title) + str(e))
         finally:
             self.picasa = None
 
@@ -475,7 +478,7 @@ class Album(dict):
             if self.cl_args.download:
                 self.download(root, reason = u' because it does not exist locally')
         else:
-            self.LOG.debug(u'Checking album "{}"...'.format(self.title))
+            self.LOG.debug(u'Checking album "{0}"...'.format(self.title))
             self.fillFromPicasa()
             for photo_title in sorted(self.iterkeys()):
                 photo = self[photo_title]
@@ -514,7 +517,7 @@ class AlbumList(dict):
                 full_album_title = album_title
                 for i in xrange(0, num_albums):
                     if num_albums > 1:
-                        self.LOG.debug(u'Splicing album "{} ({})" with photos from "{}" to "{}"'.format(album_title, i + 1, supported_files[i * self.cl_args.max_photos], supported_files[min(i * self.cl_args.max_photos + self.cl_args.max_photos - 1, len(supported_files) - 1)]))
+                        self.LOG.debug(u'Splicing album "{0} ({1})" with photos from "{2}" to "{3}"'.format(album_title, i + 1, supported_files[i * self.cl_args.max_photos], supported_files[min(i * self.cl_args.max_photos + self.cl_args.max_photos - 1, len(supported_files) - 1)]))
                         full_album_title = album_title + ' (%s)' % (i + 1)
                     album = Album(self.cl_args, full_album_title, disk = AlbumDiskEntry(self.cl_args, root))
                     album.fillFromDisk(supported_files[i * self.cl_args.max_photos:i * self.cl_args.max_photos + self.cl_args.max_photos])
@@ -682,10 +685,10 @@ class PicasaSync(object):
         parser.add_argument('-u', '--upload', dest = 'upload', action = 'store_true', help = 'Upload missing remote photos')
         parser.add_argument('-d', '--download', dest = 'download', action = 'store_true', help = 'Download missing local photos')
         parser.add_argument('-r', '--update', dest = 'update', action = 'store_true', help = 'Update changed local or remote photos')
-        parser.add_argument('-t', '--threads', dest = 'threads', type = int, nargs = '?', const = self.ncores, default = 1, help = 'Multithreaded operation. Set number of threads to use on album processing. If not given defaults to 1, if given without argument, defaults to number of CPU cores ({} in this system).'.format(self.ncores))
+        parser.add_argument('-t', '--threads', dest = 'threads', type = int, nargs = '?', const = self.ncores, default = 1, help = 'Multithreaded operation. Set number of threads to use on album processing. If not given defaults to 1, if given without argument, defaults to number of CPU cores (%s in this system).' % self.ncores)
         parser.add_argument('-o', '--origin', dest = 'origin', metavar = 'ORIGINS', type = ListParser(choices = ('filename', 'exif', 'stat')), default = ['exif', 'stat'], help = 'Timestamp origin. ORIGINS is a comma separated list of values "filename", "exif" or "stat" which will be probed in order. Default is "exif,stat".')
         group = parser.add_argument_group('DANGEROUS', 'Dangerous options that should be used with care')
-        group.add_argument('--max-size', dest = 'max_size', type = ListParser(unique = False, type = int, nargs = 2), default = self.MAX_PHOTO_SIZE, help = 'Maximum size of photo when using --transform=resize. Default is {},{}.'.format(*self.MAX_PHOTO_SIZE))
+        group.add_argument('--max-size', dest = 'max_size', type = ListParser(unique = False, type = int, nargs = 2), default = self.MAX_PHOTO_SIZE, help = 'Maximum size of photo when using --transform=resize. Default is %s.' % self.MAX_PHOTO_SIZE)
         group.add_argument('--force-update', dest = 'force_update', choices = ('full', 'metadata'), nargs = '?', const = 'full', help = 'Force updating photos regardless of modified status (Assumes --update). If no argument given, it assumes full.')
         group.add_argument('--delete-photos', dest = 'delete_photos', action = 'store_true', help = 'Delete remote or local photos not present on the other album')
         group.add_argument('--strip-exif', dest = 'strip_exif', action = 'store_true', help = 'Strip EXIF data from your photos on upload.')
@@ -706,7 +709,7 @@ class PicasaSync(object):
         sys.stdout = StreamLogger(sys.stdout, '[stdout] ')
 
         if cl_args.max_photos > self.MAX_PHOTOS_PER_ALBUM:
-            self.LOG.warn('Maximum number of photos in album is bigger than the Picasa limit ({}), using this number as limit'.format(self.MAX_PHOTOS_PER_ALBUM))
+            self.LOG.warn('Maximum number of photos in album is bigger than the Picasa limit ({0}), using this number as limit'.format(self.MAX_PHOTOS_PER_ALBUM))
             cl_args.max_photos = self.MAX_PHOTOS_PER_ALBUM
 
         if not cl_args.upload and not cl_args.download:
