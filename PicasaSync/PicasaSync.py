@@ -547,6 +547,7 @@ class AlbumList(dict):
     def add_item_to_dict(self, title, album):
         album_dict = dict()
         album_dict['title'] = title
+        album_dict['published'] = album.picasa.published.text
         #album_dict['thumbnail'] = album.picasa.media.thumbnail.url
         album_dict['photos'] = []
         for photo_name in sorted(album.keys(), key=lambda x: album[x].order_id):
