@@ -269,6 +269,24 @@ class Photo(object):
 		else:
 			self.disk.timestamp = timestamp
 
+	@dryrun('self.album.cl_args.dry_run', LOG, u'Downloading photo thumbnail "{self.title}"{reason}')
+	def download_thumbnail(self):
+		try:
+			timestamp = _entry_ts(self.picasa)
+		except AttributeError as e:
+			self.LOG.error(str(e))
+			return
+		thumbnail_path = 'thumbnail/' + self.path
+		tmpfilename = thumbnail_path + '.part'
+		try:
+			urllib.urlretrieve(self.picasa.media.thumbnail[1].url, tmpfilename)
+			os.utime(tmpfilename, (timestamp, timestamp))
+			os.rename(tmpfilename, thumbnail_path)
+		except EnvironmentError as e:
+			self.LOG.error(u'Error downloading photo thumbnail "{}": '.format(self.title) + str(e))
+		else:
+			self.disk.timestamp = timestamp
+
 	@dryrun('self.album.cl_args.dry_run', LOG, u'Deleting file "{self.disk.path}"{reason}')
 	def deleteFromDisk(self):
 		try:
@@ -298,11 +316,13 @@ class Photo(object):
 				self.deleteFromPicasa(reason = ' because it does not exist in the local album')
 			if self.album.cl_args.download:
 				self.download(reason = ' because it does not exist in the local album')
+				self.download_thumbnail(reason = ' thumbnail')
 		elif self.album.cl_args.update:
 			if self.album.cl_args.upload and (self.disk.timestamp > _entry_ts(self.picasa) or self.album.cl_args.force_update):
 				self.upload(reason = u' {0}because it is newer than the one in the album "{1.title}"'.format('[FORCED] ' if self.album.cl_args.force_update else '', self.album))
 			if self.album.cl_args.download and (self.disk.timestamp < _entry_ts(self.picasa) or self.album.cl_args.force_update):
 				self.download(reason = u' {0}because it is newer than the one in the album "{1.title}"'.format('[FORCED] ' if self.album.cl_args.force_update else '', self.album))
+				self.download_thumbnail(reason = ' thumbnail')
 
 class Album(dict):
 	LOG = logging.getLogger('Album')
@@ -350,12 +370,18 @@ class Album(dict):
 		if self.filled_from_picasa:
 			return
 
-		for photo_entry in self.client.GetEntries('/data/feed/api/user/default/albumid/%s?kind=photo' % self.picasa.gphoto_id.text):
+		for i, photo_entry in enumerate(self.client.GetEntries('/data/feed/api/user/default/albumid/%s?kind=photo&imgmax=1600' % self.picasa.gphoto_id.text)):
 			if mimetypes.guess_type(photo_entry.title.text)[0] in AlbumList.standard_types.union(AlbumList.raw_types):
 				photo_entry.title = atom.Title(text = os.path.splitext(photo_entry.title.text)[0])
 			photo = Photo(self, picasa = photo_entry)
+			photo.order_id = i
 			if photo.title in self:
-				self[photo.title].combine(photo)
+				try:
+					self[photo.title].combine(photo)
+					self[photo.title].order_id = i
+				except InvalidArguments as e:
+					self[photo.title] = photo
+					self.LOG.error(e)
 			else:
 				self[photo.title] = photo
 		self.filled_from_picasa = True
@@ -381,6 +407,7 @@ class Album(dict):
 	@dryrun('self.cl_args.dry_run', LOG, u'Creating directory "{self.title}"{reason}')
 	def download(self, root):
 		self.disk = AlbumDiskEntry(self.cl_args, os.path.join(root, self.title))
+		#self.thumbnail_disk = AlbumDiskEntry(self.cl_args, os.path.join(root, self.title))
 		timestamp = _entry_ts(self.picasa)
 		try:
 			if not os.path.isdir(self.disk.path):
@@ -391,9 +418,23 @@ class Album(dict):
 		else:
 			self.disk.timestamp = timestamp
 
+		self.disk_thubmnail = AlbumDiskEntry(self.cl_args, os.path.join('thumbnail/' + root, self.title))
+		try:
+			if not os.path.isdir(self.disk_thubmnail.path):
+				os.makedirs(self.disk_thubmnail.path)
+			os.utime(self.disk_thubmnail.path, (timestamp, timestamp))
+		except EnvironmentError as e:
+			self.LOG.error(u'Cannot create local directory: ' + str(e))
+		else:
+			self.disk_thubmnail.timestamp = timestamp
+
+		ff = os.path.join(self.disk_thubmnail.path, '__album.jpg')
+		urllib.urlretrieve(self.picasa.media.thumbnail[0].url, ff)
+
 		self.fillFromPicasa()
 		for photo_title in sorted(self.iterkeys()):
 			photo = self[photo_title]
+			#photo.sync()
 			photo.download()
 
 	@dryrun('self.cl_args.dry_run', LOG, u'Deleting directory "{self.disk.path}"{reason}')
@@ -417,9 +458,11 @@ class Album(dict):
 			self.LOG.error(u'Error deleting album "{}": '.format(self.title) + str(e))
 		finally:
 			self.picasa = None
-	
+
 	def sync(self):
 		root = self.cl_args.paths[0]
+
+		#self.download(root, reason = u' because it does not exist locally')
 
 		if self.isInDisk() and not self.isInPicasa():
 			if self.cl_args.upload:
@@ -486,6 +529,11 @@ class AlbumList(dict):
 			return
 
 		for album_entry in self.clients[0].GetEntries('/data/feed/api/user/default?kind=album'):
+			print "HERE"
+			print album_entry
+			self.LOG.error("Rights: %s", album_entry.rights.text)
+			if album_entry.rights.text != 'public':
+				continue
 			album = Album(self.cl_args, picasa = album_entry)
 			if album.title in self:
 				self[album.title].combine(album)
@@ -493,14 +541,31 @@ class AlbumList(dict):
 				self[album.title] = album
 		self.filled_from_picasa = True
 
+	def add_item_to_dict(self, title, album):
+		album_dict = dict()
+		album_dict['title'] = title
+		#album_dict['thumbnail'] = album.picasa.media.thumbnail.url
+		album_dict['photos'] = []
+		for photo_name in sorted(album.keys(), key=lambda x: album[x].order_id):
+			photo = album[photo_name]
+			photo_dict = {'name': photo_name}
+			if photo.picasa and photo.picasa.summary.text:
+				photo_dict['summary'] = googlecl.safe_decode(photo.picasa.summary.text)
+			album_dict['photos'].append(photo_dict)
+		self.dict_for_dump[title] = album_dict
+		self.LOG.error("%s: %s", title, album)
+
 	def sync(self):
 		self.fillFromDisk()
 		self.fillFromPicasa()
+
+		self.dict_for_dump = dict()
 		if self.cl_args.threads == 1:
 			for album_title in sorted(self.iterkeys()):
 				album = self[album_title]
 				album.client = self.clients[0]
 				album.sync()
+				self.add_item_to_dict(album_title, self[album_title])
 				del self[album_title]
 		else:
 			threads = []
@@ -512,6 +577,7 @@ class AlbumList(dict):
 						threads[i][0].join(0.1)
 						if not threads[i][0].is_alive():
 							clients.append(threads[i][1].client)
+							self.add_item_to_dict(album_title, self[album_title])
 							del self[album_title]
 							del threads[i]
 							break
@@ -521,6 +587,23 @@ class AlbumList(dict):
 				threads.append((new_thread, album))
 			for (thread, album) in threads:
 				thread.join()
+
+		#for title, album in self.items():
+			#album_dict = dict()
+			#album_dict['title'] = title
+			#album_dict['photos'] = []
+			#for photo_name, photo in album.items():
+				#album_dict['photos'].append({
+					#'name': photo_name,
+					#'summary': photo.picasa.summary.text,
+					#})
+			#dict_for_dump[title] = album_dict
+			#self.LOG.error("%s: %s", title, album)
+
+		self.LOG.error("%s", self.dict_for_dump)
+		import json
+		json.dump(self.dict_for_dump, open('data.json', 'w'))
+
 
 class ListParser:
 	def __init__(self, unique = True, type = str, nargs = None, separator = ',', choices = None):
