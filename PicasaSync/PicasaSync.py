@@ -537,6 +537,12 @@ class AlbumList(dict):
             self.LOG.error("Rights: %s", album_entry.rights.text)
             if album_entry.rights.text != 'public':
                 continue
+            is_buzz = False
+            for ext in album_entry.extension_elements:
+                if ext.tag == 'albumType' and ext.text == 'Buzz':
+                    is_buzz = True
+            if is_buzz:
+                continue
             album = Album(self.cl_args, picasa = album_entry)
             if album.title in self:
                 self[album.title].combine(album)
@@ -545,6 +551,9 @@ class AlbumList(dict):
         self.filled_from_picasa = True
 
     def add_item_to_dict(self, title, album):
+        if not album.picasa:
+            # Skip if there is no online entry.
+            return
         album_dict = dict()
         album_dict['title'] = title
         album_dict['published'] = album.picasa.published.text
